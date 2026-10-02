@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: expense-claim-policy-review-assistant
+    runtime: node
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SEED_DEMO_DATA
+        value: "true"
