@@ -1,4 +1,5 @@
 import { findPolicy } from './policies.js';
+import { logger } from './logger.js';
 
 const keywords = [
   ['Business Meal', /meal|dinner|lunch|breakfast|restaurant|client/i], ['Accommodation', /hotel|accommodation|stay|lodging/i],
@@ -16,13 +17,18 @@ export async function classifyClaim(claim) {
   if (!match) missingInformation.push('A clearer description of the purchase and its business purpose.');
   if (classification === 'Business Meal' && !/client|meeting|business|project/i.test(claim.description)) missingInformation.push('Names of attendees and the business purpose of the meal.');
   if (categoryConflict) missingInformation.push(`Please confirm whether this should be reviewed as ${match[0]} rather than ${claim.category}.`);
-  if (!process.env.OPENAI_API_KEY) return { classification, confidence, uncertain, explanation: categoryConflict ? `Local analysis found ${classification.toLowerCase()} cues in the description, which conflicts with the submitted ${claim.category} category.` : (match ? `Local analysis found description cues consistent with ${classification}.` : 'Local analysis could not identify clear category cues.'), missingInformation, provider: 'fallback' };
+  if (!process.env.OPENAI_API_KEY) {
+    logger.info('ai.classification.completed', { provider: 'fallback', classification, confidence, uncertain });
+    return { classification, confidence, uncertain, explanation: categoryConflict ? `Local analysis found ${classification.toLowerCase()} cues in the description, which conflicts with the submitted ${claim.category} category.` : (match ? `Local analysis found description cues consistent with ${classification}.` : 'Local analysis could not identify clear category cues.'), missingInformation, provider: 'fallback' };
+  }
   // Keep provider handling constrained; policy evidence is always attached by server retrieval below.
   try {
     const response = await fetch(`${(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: process.env.OPENAI_MODEL || 'gpt-4o-mini', response_format: { type: 'json_object' }, messages: [{ role: 'system', content: `Classify only into: ${keywords.map(x => x[0]).join(', ')}. Return JSON classification, confidence (0-1), explanation, missingInformation array. Do not invent policy rules.` }, { role: 'user', content: claim.description }] }) });
     if (!response.ok) throw new Error(`provider returned ${response.status}`);
     const parsed = JSON.parse((await response.json()).choices?.[0]?.message?.content || '{}');
     if (!findPolicy(parsed.classification) || !Number.isFinite(parsed.confidence)) throw new Error('malformed AI response');
-    return { classification: parsed.classification, confidence: Math.max(0, Math.min(1, parsed.confidence)), uncertain: parsed.confidence < 0.8, explanation: String(parsed.explanation || ''), missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [], provider: 'openai' };
-  } catch (error) { console.error('AI error:', error.message); return { classification: null, confidence: null, uncertain: true, explanation: 'AI review is temporarily unavailable. Deterministic validation results are still available. Please review manually.', missingInformation: [], provider: 'unavailable' }; }
+    const result = { classification: parsed.classification, confidence: Math.max(0, Math.min(1, parsed.confidence)), uncertain: parsed.confidence < 0.8, explanation: String(parsed.explanation || ''), missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [], provider: 'openai' };
+    logger.info('ai.classification.completed', { provider: 'openai', classification: result.classification, confidence: result.confidence, uncertain: result.uncertain });
+    return result;
+  } catch (error) { logger.error('ai.classification.failed', { message: error.message }); return { classification: null, confidence: null, uncertain: true, explanation: 'AI review is temporarily unavailable. Deterministic validation results are still available. Please review manually.', missingInformation: [], provider: 'unavailable' }; }
 }

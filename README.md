@@ -10,6 +10,7 @@ A focused internal MVP for submitting expense claims, checking them against conf
 - Structured policy records and evidence retrieval—AI output is never used as policy evidence.
 - Optional OpenAI-compatible classification. With no API key, the product uses a visibly labelled local fallback; provider errors remain visible to the reviewer.
 - Reviewer approval, rejection, clarification, and category override (reasons required where appropriate).
+- Structured JSON application and AI-workflow logs suitable for Render log search.
 
 ## Architecture and workflow
 
@@ -49,12 +50,22 @@ On a fresh local database, the server seeds four realistic demo claims so the da
 npm test
 ```
 
-Example: submit `Asha Patel`, `Business Meal`, `1000 INR`, `Dinner with client after project meeting`, with a receipt. Submit it twice to see duplicate detection; submit a 2500 INR business meal without a receipt to see both policy findings.
+The test suite covers required fields, invalid amounts, strict calendar dates, policy retrieval, receipt and limit findings, duplicate detection, claim creation, reviewer rejection, classification override reasons, audit history, and uncertain classification.
+
+## Reviewer demo inputs
+
+No account is required. A fresh local or hosted instance seeds demo claims automatically.
+
+- Review **Arjun Mehta** to see a Travel claim exceeding its 5,000 INR policy limit.
+- Review **Kavya Iyer** to see a missing-receipt finding and a clarification workflow.
+- Submit `Neha Kapoor`, `Business Meal`, `1450 INR`, receipt available, with the description `Lunch with the client team after the quarterly project review meeting.` Then approve it to inspect the audit history.
 
 ## Environment and deployment
 
 Copy `.env.example`; `OPENAI_API_KEY` is optional. Set `OPENAI_BASE_URL` and `OPENAI_MODEL` for an OpenAI-compatible provider. Do not commit `.env`. Deploy the API with persistent storage mounted for `data/claims.db`, serve the client build through a static host/reverse proxy, and route `/api` to the API.
 
+The submitted demo is deployed as a single Render web service at `https://expense-claim-policy-review-assistant.onrender.com/`. The free Render plan has no persistent disk: SQLite data can reset after a restart or redeploy, and the safe demo records are then seeded again. A production deployment should use persistent storage or a managed relational database.
+
 ## Known limitations
 
-This MVP has no authentication, receipt file uploads, or multi-currency conversion. The local fallback classifier is deliberately simple; production deployments should configure an API key and implement identity/authorization.
+This MVP has no authentication, receipt file uploads, or multi-currency conversion. The local fallback classifier is deliberately simple; production deployments should configure an OpenAI-compatible API key, add identity/authorization, and use persistent managed data storage. The fallback is clearly labelled in the UI and does not claim to be an external LLM response.
